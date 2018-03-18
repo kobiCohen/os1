@@ -11,11 +11,45 @@
 #define LIST  4
 #define BACK  5
 
+#define MAX_HISTORY 16
 #define MAXARGS 10
 
+char history [128][MAX_HISTORY];
+
+int nextfree = 0;
+void push_history(char * data){
+  if (nextfree == MAX_HISTORY){
+    for (int i = 1; i <MAX_HISTORY; i++){
+       strcpy(history[i], history[i-1]);
+    }
+  }
+  else{
+    nextfree +=1;
+  }
+  strcpy(history[nextfree], data);
+}
+
+char* getLine(int index){
+  return history[nextfree-index];
+}
+char* getLast(){
+  if (nextfree == MAX_HISTORY){
+    return history[MAX_HISTORY-1];
+  }
+  return history[nextfree-1];
+}
+void printHis(){
+  for(int i =1; i < MAX_HISTORY; i++){
+    printf(2, history[i-1]);
+
+  }
+}
 struct cmd {
   int type;
 };
+
+
+
 
 struct execcmd {
   int type;
@@ -144,10 +178,11 @@ getcmd(char *buf, int nbuf)
 int
 main(void)
 {
-  static char buf[100];
+  static char buf[128];
   int fd;
 
   // Ensure that three file descriptors are open.
+
   while((fd = open("console", O_RDWR)) >= 0){
     if(fd >= 3){
       close(fd);
@@ -156,18 +191,41 @@ main(void)
   }
 
   // Read and run input commands.
-  while(getcmd(buf, sizeof(buf)) >= 0){
+  while(getcmd(buf, sizeof(buf)) >= 0){  
+     push_history(buf);
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
-      // Chdir must be called by the parent, not the child.
+    
+     // Chdir must be called by the parent, not the child.
       buf[strlen(buf)-1] = 0;  // chop \n
       if(chdir(buf+3) < 0)
         printf(2, "cannot cd %s\n", buf+3);
       continue;
     }
+    else if(buf[0] == 'h' && buf[1] =='i' && buf[2] =='s' && buf[3] == 't' && buf[4] == 'o' ){
+       if (buf[8] == '-' && buf [9] =='l'){
+          if ('0'<=buf[12] && buf[12]<='9'){
+            int lin_num = 10 + (buf[12] - '0');
+            printf(2, getLine(lin_num));
+          }
+          else{
+            int lin_num = buf[11] - '0';
+            printf(2, getLine(lin_num));
+          }
+      }
+      else{
+        printHis();
+      }
+      
+      
+      continue;
+    } else
     if(fork1() == 0)
       runcmd(parsecmd(buf));
+    
+      
     wait();
   }
+  
   exit();
 }
 
