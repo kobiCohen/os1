@@ -121,6 +121,12 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 
+int 			remVariable(char*);
+int             getVariable(char*, char*);
+int 			setVariable(char*, char*);
+int             wait2(int, int*, int*, int*);
+
+
 // swtch.S
 void            swtch(struct context**, struct context*);
 

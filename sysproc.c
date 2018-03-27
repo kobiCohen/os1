@@ -7,7 +7,6 @@
 #include "mmu.h"
 #include "proc.h"
 
-
 int sys_yield(void)
 {
   yield(); 
@@ -90,9 +89,59 @@ int
 sys_uptime(void)
 {
   uint xticks;
-
   acquire(&tickslock);
   xticks = ticks;
   release(&tickslock);
   return xticks;
 }
+
+int 
+sys_remVariable(void) {
+  char* variable;
+  if(argptr(0, &variable, 32) < 0)
+    return -1;
+  return remVariable(variable);
+}
+
+int
+sys_getVariable(void) {
+  char* variable;
+  char* value;
+  if(argptr(0, &variable, 32) < 0)
+    return -1;
+  if(argptr(1, &value, 128) < 0)
+    return -1;
+  return getVariable(variable, value);  
+}
+
+int 
+sys_setVariable(void) {
+  char* variable;
+  char* value;
+  if(argptr(0, &variable, 32) < 0)
+    return -1;
+  if(argptr(1, &value, 128) < 0)
+    return -1;
+  return setVariable(variable, value);  
+}
+
+int 
+sys_wait2(void) {
+  int pid;
+  int* wtime;
+  int* rtime;
+  int* iotime;
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(argptr(0, (int*)&wtime, sizeof(wtime)) < 0)
+    return -1;
+  if(argptr(0, (int*)&wtime, sizeof(rtime)) < 0)
+    return -1;
+  if(argptr(0, (int*)&wtime, sizeof(iotime)) < 0)
+    return -1;
+
+  return wait2(pid, wtime, rtime, iotime);  
+}
+
+int
+sys_uptime

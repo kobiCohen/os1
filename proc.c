@@ -6,7 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-
+int proc_index = 0 ;
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -19,7 +19,10 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
-
+void updateProcIdx(struct proc * p){
+  p->proc_idx = proc_index;
+  proc_index +=1;
+}
 void
 pinit(void)
 {
@@ -38,10 +41,10 @@ struct cpu*
 mycpu(void)
 {
   int apicid, i;
-  
+
   if(readeflags()&FL_IF)
     panic("mycpu called with interrupts enabled\n");
-  
+
   apicid = lapicid();
   // APIC IDs are not guaranteed to be contiguous. Maybe we should have
   // a reverse map, or reserve a register to store &cpus[i].
@@ -112,6 +115,12 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  // Creating the new fields region
+  p->ctime = ticks;
+  p->etime = 0;
+  p->rtime = 0;
+  p->iotime=0;
+  // End region fror new fields
   return p;
 }
 
@@ -124,7 +133,7 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
-  
+
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
@@ -149,7 +158,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-
+  updateProcIdx(p);
   release(&ptable.lock);
 }
 
@@ -215,7 +224,7 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-
+  updateProcIdx(np);
   release(&ptable.lock);
 
   return pid;
@@ -263,6 +272,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  curproc->etime = ticks;
   sched();
   panic("zombie exit");
 }
@@ -311,6 +321,28 @@ wait(void)
   }
 }
 
+int
+wait2(int pid, int* wtime, int* rtime, int* iotime) {
+    int was_found = -1;
+    struct proc *p;   
+    acquire(&ptable.lock);
+      //Iterating on the proc table to find the process we are searching for
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+        if(p->pid == pid){
+          was_found = 0;
+          // The process.
+          //Updating times region
+          *wtime= p->etime - p->ctime - p->rtime - p->iotime;
+          *rtime=p->rtime;
+          //End of updating time region
+           sleep(p, &ptable.lock); 
+        }
+        else
+          continue;
+  }
+  return was_found;
+}
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -325,32 +357,81 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
   for(;;){
-    // Enable interrupts on this processor.
-    sti();
+      // Enable interrupts on this processor.
+      sti();
 
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+      #ifdef DEFAULT
+      
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+          // Loop over process table looking for process to run.
+          acquire(&ptable.lock);
+          for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+            if(p->state != RUNNABLE)
+              continue;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+            // Switch to chosen process.  It is the process's job
+            // to release ptable.lock and then reacquire it
+            // before jumping back to us.
+            c->proc = p;
+            switchuvm(p);
+            p->state = RUNNING;
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
+            swtch(&(c->scheduler), p->context);
+            switchkvm();
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+          }
+          release(&ptable.lock);
+      
+      #else
+      #ifdef SRT
+        //TODO
+
+      #else
+      #ifdef CFSD
+      //TODO
+
+      #else
+      #ifdef FCFS
+        // Loop over process table looking for process to run.
+        //Changed part! look for the minimal proc_indx
+        int minimal_idx = 2147483647;
+        struct proc * next_proc;
+          acquire(&ptable.lock);
+          for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+            if(p->state != RUNNABLE)
+              continue;
+
+            // Switch to chosen process.  It is the process's job
+            // to release ptable.lock and then reacquire it
+            // before jumping back to us.
+            else 
+              if (p->proc_idx < minimal_idx) {
+                next_proc = p;
+                minimal_idx = p->proc_idx;
+              }
+            
+           
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+          }
+            c->proc = p;
+            switchuvm(p);
+            p->state = RUNNING;
+            swtch(&(c->scheduler), p->context);
+            switchkvm();
+            release(&ptable.lock);
+      #endif
+      #endif
+      #endif
+      #endif
+
 
   }
 }
@@ -387,6 +468,7 @@ yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE;
+  updateProcIdx(myproc());
   sched();
   release(&ptable.lock);
 }
@@ -418,7 +500,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
+
   if(p == 0)
     panic("sleep");
 
@@ -458,10 +540,13 @@ static void
 wakeup1(void *chan)
 {
   struct proc *p;
-
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+      updateProcIdx(p);
+    }
+      
+
 }
 
 // Wake up all processes sleeping on chan.
@@ -486,8 +571,12 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING){
         p->state = RUNNABLE;
+        updateProcIdx(p);
+      }
+        
+
       release(&ptable.lock);
       return 0;
     }
@@ -532,3 +621,76 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+void
+updateProcRuntime(void){
+  struct proc* p = ptable.proc;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if(p && p->state == RUNNING )
+      p->rtime++;
+    else 
+      if(p && p->state == SLEEPING)
+        p->iotime++; 
+  } 
+}
+
+int 
+remVariable(char* variable) {
+  int index = 0;
+  int flag = 1;
+  for(int i = 0; i < num_of_shortcuts; i++) {
+    for(int k = 0; k < 32; k++)
+      if(flag == 0 || (shortcuts[i].var[k] != variable[k] && 
+        ((variable[k] >= 'a' && variable[k] <= 'z') || (variable[k] >= 'A' && variable[k] <= 'Z')))) {
+        flag = 0;
+        index = i;
+      }
+  }
+  if(flag == 1) {
+    for(int i = index; i < num_of_shortcuts - 1; i++) {
+      for(int k = 0; k < 128; k++)
+        shortcuts[i].val[k] = shortcuts[i + 1].val[k];
+      for(int k = 0; k < 32; k++)
+        shortcuts[i].var[k] = shortcuts[i + 1].var[k];
+    }
+    num_of_shortcuts -= 1;
+    return 0;
+  }
+  return -1;
+}
+
+int
+getVariable(char* variable, char* value) {
+  for(int i = 0; i < num_of_shortcuts; i++) {
+    int flag = 1;
+    int k = 0;
+    while((variable[k] >= 'a' && variable[k] <= 'z') || (variable[k] >= 'A' && variable[k] <= 'Z')) {
+      if(shortcuts[i].var[k] != variable[k])
+         flag = 0;
+      k++;
+    }
+    if(flag == 1) {
+      for(int k = 0; k < 128; k++)
+        value[k] = shortcuts[i].val[k];
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int 
+setVariable(char* variable, char* value) {
+  if(num_of_shortcuts < 31) {
+    if(remVariable(variable) == -1)
+      num_of_shortcuts++;
+    for(int k = 0; k < 128; k++)
+      shortcuts[num_of_shortcuts].val[k] = value[k];
+    for(int k = 0; k < 32; k++)
+      shortcuts[num_of_shortcuts].var[k] = variable[k];
+    return 0;
+  }
+  return -1;
+}
+
+
+

@@ -1,5 +1,4 @@
 // Shell.
-
 #include "types.h"
 #include "user.h"
 #include "fcntl.h"
@@ -13,9 +12,182 @@
 
 #define MAXARGS 10
 
+#define MAX_HISTORY 16
+
+struct command {
+  char com[128];
+};
+
+struct command history[MAX_HISTORY];
+int nextfree = 0;
+
+
+#define MAX_VARIABLES 32
+
+struct shortcut1{
+  char var[32];
+  char val[128];
+};
+
+struct shortcut1 shortcuts1[MAX_VARIABLES];
+int num_of_shortcuts1 = 0;
+
+int 
+remVariable1(char* variable) {
+  int index = 0;
+  int flag = 1;
+  for(int i = 0; i < num_of_shortcuts1; i++) {
+    for(int k = 0; k < 32; k++)
+      if(flag == 0 || (shortcuts1[i].var[k] != variable[k] && 
+        ((variable[k] >= 'a' && variable[k] <= 'z') || (variable[k] >= 'A' && variable[k] <= 'Z')))) {
+        flag = 0;
+        index = i;
+      }
+  }
+  if(flag == 1) {
+    for(int i = index; i < num_of_shortcuts1 - 1; i++) {
+      for(int k = 0; k < 128; k++)
+        shortcuts1[i].val[k] = shortcuts1[i + 1].val[k];
+      for(int k = 0; k < 32; k++)
+        shortcuts1[i].var[k] = shortcuts1[i + 1].var[k];
+    }
+    num_of_shortcuts1 -= 1;
+    return 0;
+  }
+  return -1;
+}
+
+int
+getVariable1(char* variable, char* value) {
+  for(int i = 0; i < num_of_shortcuts1; i++) {
+    int flag = 1;
+    int k = 0;
+    while((variable[k] >= 'a' && variable[k] <= 'z') || (variable[k] >= 'A' && variable[k] <= 'Z')) {
+      printf(2, "shortcuts1[%d].var: %s\n", i, shortcuts1[i].var);
+      if(shortcuts1[i].var[k] != variable[k])
+         flag = 0;
+      k++;
+    }
+   printf(2, "var get: %s\n", variable);
+
+    if(flag == 1) {
+      for(int k = 0; k < 128; k++)
+        value[k] = shortcuts1[i].val[k];
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int 
+setVariable1(char* variable, char* value) {
+  if(num_of_shortcuts1 < 31) {
+    //remVariable1(variable);
+    printf(2, "var added: %s\n", variable);
+    for(int k = 0; k < 128; k++)
+      shortcuts1[num_of_shortcuts1].val[k] = value[k];
+    for(int k = 0; k < 32; k++)
+      shortcuts1[num_of_shortcuts1].var[k] = variable[k];
+    num_of_shortcuts1++;
+    return 0;
+  }
+  return -1;
+}
+
+//fix buffer if there is a need and return 1 if there is no need return 0
+void
+fix_buffer(char* buf) {
+   int flag = 1;
+   char tmp_buf[128];
+   int buf_index = 0;
+   flag = 0;
+   printf(2, "buf: %s\n", buf);
+   for(int i = 0; i < 128; i++) {
+      if(buf[i] == '$') {
+         char value[128];
+         char variable[32];
+         flag = 1;
+         int k = 1;
+         while((buf[i + k] >= 'a' && buf[i + k] <= 'z') || (buf[i + k] >= 'A' && buf[i + k] <= 'Z')) {
+            variable[k - 1] = buf[i + k];
+            k++;
+         }
+         int t = getVariable1(variable, value);
+         printf(2, "var: %s\n", variable);
+         printf(2, "val: %s\n", value);
+         printf(2, "t: %d\n", t);
+
+         if(t == 0) {
+            i = i + k;
+            int j = 0;
+            while (value[j] != 0) {
+               tmp_buf[buf_index] = value[j];
+               buf_index++;
+               j++;
+            }          
+         }
+      }
+      tmp_buf[buf_index] = buf[i];
+      buf_index++;
+   }
+   if(flag == 1) 
+      for(int i = 0; i < 128; i++)
+         buf[i] = tmp_buf[i];
+}
+
+
+void 
+push_history(char* data) {
+   if(nextfree == MAX_HISTORY)
+      for(int i = 1; i < MAX_HISTORY; i++)
+         for(int k = 0; k < 128; k++) 
+            history[i].com[k] = history[i - 1].com[k];
+   else
+      nextfree += 1;
+   for(int k = 0; k < 128; k++) 
+      history[nextfree].com[k] = data[k];
+}
+
+char* 
+get_line(int index) {
+   return history[nextfree - index].com;
+}
+
+void 
+print_history() {
+   for(int i = 0; i < nextfree; i++) 
+      printf(2, "%s\n", history[i].com);
+   nextfree = 0;
+   printf(2, "history\n");
+}
+
+//prints history if the buffer says so, returns 1 if printed or 0 if not.
+int
+history_support(char* buf) {
+   if(buf[0] == 'h' && buf[1] == 'i' && buf[2] == 's' && buf[3] == 't' && buf[4] == 'o' && buf[5] == 'r' && buf[6] == 'y') {
+      if (buf[8] == '-' && buf[9] =='l') {
+         int line_num;
+         char* line;
+         if(buf[12] > 47 && buf[12] < 58)
+            line_num = 10 * (buf[11] - 48) + (buf[12] - 48);
+         else
+            line_num  = buf[11] - 48;
+         line = get_line(line_num);
+         for(int i = 0; i < 128; i++)
+            buf[i] = line[i];
+         return 0;
+      }
+      else 
+         print_history();
+      return 1; 
+   }
+   return 0;
+}
+
 struct cmd {
   int type;
 };
+
 
 struct execcmd {
   int type;
@@ -142,33 +314,59 @@ getcmd(char *buf, int nbuf)
 }
 
 int
-main(void)
-{
-  static char buf[100];
-  int fd;
+main(void) {
+   static char buf[161];
+   int fd;
 
-  // Ensure that three file descriptors are open.
-  while((fd = open("console", O_RDWR)) >= 0){
-    if(fd >= 3){
-      close(fd);
-      break;
-    }
-  }
+   // Ensure that three file descriptors are open.
+   while((fd = open("console", O_RDWR)) >= 0){
+      if(fd >= 3){
+         close(fd);
+         break;
+      }
+   }
 
-  // Read and run input commands.
-  while(getcmd(buf, sizeof(buf)) >= 0){
-    if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
-      // Chdir must be called by the parent, not the child.
-      buf[strlen(buf)-1] = 0;  // chop \n
-      if(chdir(buf+3) < 0)
-        printf(2, "cannot cd %s\n", buf+3);
-      continue;
-    }
-    if(fork1() == 0)
-      runcmd(parsecmd(buf));
-    wait();
-  }
-  exit();
+   // Read and run input commands.
+   while(getcmd(buf, sizeof(buf)) >= 0) {
+
+      if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' ') {
+         // Chdir must be called by the parent, not the child.
+         buf[strlen(buf)-1] = 0;  // chop \n
+         if(chdir(buf+3) < 0)
+            printf(2, "cannot cd %s\n", buf + 3);
+         continue;
+      }
+
+      char value[128];
+      char variable[32];
+      int index = 0, flag = 0;
+
+      for(int i = 0; i < sizeof(buf); i++) {
+         if(buf[i] == '=') {
+            flag = 1;
+            index = i;
+         }
+         if(flag == 0)
+            variable[i] = buf[i];
+         if(flag == 1 && buf[i] != '=')   
+            value[i - index - 1] = buf[i];
+      }
+
+      fix_buffer(buf);
+
+      if(flag == 1) 
+         setVariable1(variable, value);
+
+      push_history(buf);
+
+      int history_flag = history_support(buf);
+
+      if(fork1() == 0) 
+         if(flag == 0 && history_flag == 0)
+            runcmd(parsecmd(buf));
+      wait();
+      }
+   exit();
 }
 
 void

@@ -47,12 +47,23 @@ trap(struct trapframe *tf)
   }
 
   switch(tf->trapno){
-  case T_IRQ0 + IRQ_TIMER:
+  case T_IRQ0 + QUANTUM:
     if(cpuid() == 0){
       acquire(&tickslock);
       ticks++;
       wakeup(&ticks);
       release(&tickslock);
+      /**
+        Time update region! 
+        After tick, happens, updating the run time or the waiting time! 
+        **/
+        //TODO:find a way to iterate all the proceaa
+        //Iterating on the proc table to find the process we are searching for
+      updateProcRuntime();
+      
+      /**
+      End of time update region!
+      **/
     }
     lapiceoi();
     break;
@@ -102,9 +113,29 @@ trap(struct trapframe *tf)
 
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
+  #ifdef DEFAULT
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
+     tf->trapno == T_IRQ0 + QUANTUM)
     yield();
+  #else
+  #ifdef SRT
+    if(myproc() && myproc()->state == RUNNING &&
+        tf->trapno == T_IRQ0 + QUANTUM)
+        yield();
+  #else
+  #ifdef CFSD
+    if(myproc() && myproc()->state == RUNNING &&
+        tf->trapno == T_IRQ0 + QUANTUM)
+        yield();
+  #else
+  #ifdef FCFS
+    
+
+  #endif
+  #endif
+  #endif
+  #endif
+  
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
