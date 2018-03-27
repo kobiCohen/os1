@@ -335,7 +335,6 @@ wait2(int pid, int* wtime, int* rtime, int* iotime) {
           *wtime= p->etime - p->ctime - p->rtime - p->iotime;
           *rtime=p->rtime;
           *iotime = p->iotime;
-          *rtime = p->rtime;
           //End of updating time region
            sleep(p, &ptable.lock); 
         }
